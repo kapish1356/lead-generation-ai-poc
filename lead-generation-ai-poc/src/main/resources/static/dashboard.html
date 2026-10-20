@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lead Dashboard</title>
+<style>
+  :root { --bg:#f5f7fb; --card:#fff; --ink:#1b2430; --muted:#5b6778; --accent:#1f5eff; --line:#dde3ee; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:14px 24px; background:var(--card); border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+  header a { color:var(--accent); text-decoration:none; font-size:14px; margin-left:16px; }
+  main { max-width:1100px; margin:24px auto; padding:0 16px; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:20px; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .stat .n { font-size:26px; font-weight:700; } .stat .l { color:var(--muted); font-size:13px; }
+  .bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+  select, button { padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; font:inherit; color:var(--ink); }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); cursor:pointer; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  th, td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); font-size:14px; vertical-align:top; }
+  th { background:#eef2fa; color:var(--muted); font-weight:600; }
+  .badge { display:inline-block; padding:2px 9px; border-radius:999px; font-weight:600; font-size:12px; color:#fff; }
+  .HOT { background:#d6336c; } .WARM { background:#e8890c; } .COLD { background:#3b7ddd; }
+  details summary { cursor:pointer; color:var(--accent); font-size:13px; }
+  pre { white-space:pre-wrap; font-size:12px; background:#f1f4fa; padding:8px; border-radius:8px; margin:6px 0 0; }
+  .wrap { overflow-x:auto; }
+</style>
+</head>
+<body>
+<header><strong>Lead Dashboard</strong><span><a href="/">Landing page</a><a href="/h2-console" target="_blank">H2 console</a></span></header>
+<main>
+  <div class="stats" id="stats"></div>
+  <div class="bar">
+    <select id="cat"><option value="">All categories</option><option>HOT</option><option>WARM</option><option>COLD</option></select>
+    <select id="st"><option value="">All statuses</option><option>NEW</option><option>CONTACTED</option><option>QUALIFIED</option><option>CONVERTED</option><option>LOST</option></select>
+    <button class="primary" id="gen">+ Generate 5 demo prospects</button>
+    <button id="refresh">Refresh</button>
+  </div>
+  <div class="wrap"><table>
+    <thead><tr><th>Lead</th><th>Company</th><th>Score</th><th>Source</th><th>Status</th><th>AI notes</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => (s ?? '').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const STATUSES = ['NEW','CONTACTED','QUALIFIED','CONVERTED','LOST'];
+
+async function loadStats() {
+  const s = await (await fetch('/api/leads/stats')).json();
+  $('stats').innerHTML = [
+    ['Total leads', s.totalLeads], ['Avg score', s.averageScore], ['Hot', s.byCategory.HOT],
+    ['Warm', s.byCategory.WARM], ['Cold', s.byCategory.COLD], ['Conversion %', s.conversionRatePercent]
+  ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+}
+
+async function loadLeads() {
+  const q = new URLSearchParams({ size: 50 });
+  if ($('cat').value) q.set('category', $('cat').value);
+  if ($('st').value) q.set('status', $('st').value);
+  const page = await (await fetch('/api/leads?' + q)).json();
+  $('rows').innerHTML = page.content.map(l => `
+    <tr>
+      <td><strong>${esc(l.fullName)}</strong><br><span style="color:#5b6778">${esc(l.email)}</span></td>
+      <td>${esc(l.company)}<br><span style="color:#5b6778">${esc(l.jobTitle)}</span></td>
+      <td><span class="badge ${l.category}">${l.category}</span> ${l.score}</td>
+      <td>${esc(l.source)}</td>
+      <td><select data-id="${l.id}">${STATUSES.map(s => `<option ${s === l.status ? 'selected' : ''}>${s}</option>`).join('')}</select></td>
+      <td><details><summary>View</summary>${esc(l.aiSummary)}<pre>${esc(l.followUpDraft)}</pre></details></td>
+    </tr>`).join('') || '<tr><td colspan="6">No leads yet.</td></tr>';
+  document.querySelectorAll('select[data-id]').forEach(sel => sel.addEventListener('change', async () => {
+    await fetch(`/api/leads/${sel.dataset.id}/status`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ status: sel.value }) });
+    loadStats();
+  }));
+}
+
+async function refresh() { await Promise.all([loadStats(), loadLeads()]); }
+
+$('refresh').onclick = refresh;
+$('cat').onchange = loadLeads;
+$('st').onchange = loadLeads;
+$('gen').onclick = async () => {
+  $('gen').disabled = true;
+  try {
+    let camps = await (await fetch('/api/campaigns')).json();
+    let id = camps.length ? camps[0].id : null;
+    if (!id) {
+      const c = await (await fetch('/api/campaigns', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ name:'Demo Campaign', targetIndustry:'Software', targetTitle:'Head of Operations' }) })).json();
+      id = c.id;
+    }
+    await fetch(`/api/campaigns/${id}/generate-leads?count=5`, { method:'POST' });
+    await refresh();
+  } finally { $('gen').disabled = false; }
+};
+refresh();
+</script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lead Capture - Demo Landing Page</title>
+<style>
+  :root { --bg:#f5f7fb; --card:#fff; --ink:#1b2430; --muted:#5b6778; --accent:#1f5eff; --line:#dde3ee; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:14px 24px; background:var(--card); border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+  header a { color:var(--accent); text-decoration:none; font-size:14px; }
+  main { max-width:720px; margin:32px auto; padding:0 16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:24px; }
+  h1 { margin:0 0 4px; font-size:24px; }
+  p.sub { margin:0 0 20px; color:var(--muted); }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  label { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }
+  input, textarea, select { width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; font:inherit; background:#fff; color:var(--ink); }
+  textarea { min-height:90px; resize:vertical; }
+  .full { grid-column:1 / -1; }
+  button { margin-top:16px; background:var(--accent); color:#fff; border:0; padding:11px 18px; border-radius:8px; font:inherit; cursor:pointer; }
+  button:disabled { opacity:.6; cursor:wait; }
+  #result { margin-top:20px; display:none; }
+  .badge { display:inline-block; padding:3px 10px; border-radius:999px; font-weight:600; font-size:13px; color:#fff; }
+  .HOT { background:#d6336c; } .WARM { background:#e8890c; } .COLD { background:#3b7ddd; }
+  pre { white-space:pre-wrap; background:#f1f4fa; padding:12px; border-radius:8px; font-size:13px; }
+  .err { color:#b42318; margin-top:12px; }
+  @media (max-width:560px) { .grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header><strong>Acme Automation</strong><a href="/dashboard.html">Open dashboard &rarr;</a></header>
+<main>
+  <div class="card">
+    <h1>Talk to our team</h1>
+    <p class="sub">Tell us about your needs. Our AI assistant scores your request instantly so the right person replies first.</p>
+    <form id="f">
+      <div class="grid">
+        <div><label>Full name *</label><input name="fullName" required></div>
+        <div><label>Work email *</label><input name="email" type="email" required></div>
+        <div><label>Phone</label><input name="phone"></div>
+        <div><label>Company</label><input name="company"></div>
+        <div><label>Job title</label><input name="jobTitle"></div>
+        <div><label>Company size (employees)</label><input name="companySize" type="number" min="1"></div>
+        <div><label>Budget (INR)</label><input name="budget" type="number" min="0"></div>
+        <div><label>How did you hear about us?</label>
+          <select name="source">
+            <option value="WEBSITE">Website</option><option value="LINKEDIN">LinkedIn</option>
+            <option value="REFERRAL">Referral</option><option value="EVENT">Event</option><option value="OTHER">Other</option>
+          </select></div>
+        <div class="full"><label>What do you need?</label><textarea name="message"></textarea></div>
+      </div>
+      <button id="btn" type="submit">Submit</button>
+      <div id="err" class="err"></div>
+    </form>
+    <div id="result">
+      <h3>Thanks! Here is what our AI assistant saw:</h3>
+      <p><span id="cat" class="badge"></span> &nbsp; Score: <strong id="score"></strong>/100</p>
+      <p id="summary"></p>
+      <strong>Draft follow-up email (for the sales team)</strong>
+      <pre id="draft"></pre>
+    </div>
+  </div>
+</main>
+<script>
+const f = document.getElementById('f');
+f.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('btn'); const err = document.getElementById('err');
+  err.textContent = ''; btn.disabled = true;
+  const data = Object.fromEntries(new FormData(f).entries());
+  for (const k of ['companySize','budget']) { data[k] = data[k] === '' ? null : Number(data[k]); }
+  for (const k of Object.keys(data)) { if (data[k] === '') delete data[k]; }
+  try {
+    const res = await fetch('/api/leads', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });
+    const body = await res.json();
+    if (!res.ok) { err.textContent = body.message + (body.fieldErrors ? ' - ' + Object.entries(body.fieldErrors).map(([k,v]) => k + ': ' + v).join(', ') : ''); return; }
+    document.getElementById('cat').textContent = body.category;
+    document.getElementById('cat').className = 'badge ' + body.category;
+    document.getElementById('score').textContent = body.score;
+    document.getElementById('summary').textContent = body.aiSummary;
+    document.getElementById('draft').textContent = body.followUpDraft;
+    document.getElementById('result').style.display = 'block';
+    f.reset();
+  } catch (x) { err.textContent = 'Could not reach the server.'; }
+  finally { btn.disabled = false; }
+});
+</script>
+</body>
+</html>
